@@ -89,7 +89,7 @@ grub_file_open (const char *name)
 
   file->device = device;
 
-  if (device->disk && file_name[0] != '/')
+  if (device->disk && file_name[0] != '/' && file_name[0] != '\\' && file_name[1] != ':')
     /* This is a block list.  */
     file->fs = &grub_fs_blocklist;
   else
