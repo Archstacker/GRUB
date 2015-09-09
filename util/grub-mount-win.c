@@ -156,6 +156,7 @@ MirrorOpenDirectory(
 
 struct fuse_readdir_ctx
 {
+    char* FilePath;
     PFillFindData FillFindData;
     PDOKAN_FILE_INFO DokanFileInfo;
 };
@@ -166,8 +167,34 @@ MirrorFindFilesFill (const char *filename,
 {
     struct fuse_readdir_ctx *ctx = data;
     WIN32_FIND_DATAW findData;
-    wcscpy_s(findData.cFileName,30, grub_util_utf8_to_tchar(filename));
+    wcscpy_s(findData.cFileName, MAX_PATH, grub_util_utf8_to_tchar(filename));
     findData.dwFileAttributes = info->dir ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_READONLY;
+    if (!info->dir)
+    {
+        grub_file_t file;
+        char *tmp;
+        tmp = xasprintf ("%s/%s", ctx->FilePath, filename);
+        file = grub_file_open (tmp);
+        free (tmp);
+        /* Symlink to directory.  */
+        if (! file && grub_errno == GRUB_ERR_BAD_FILE_TYPE)
+        {
+            findData.dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+        }
+        else if (file)
+        {
+            findData.nFileSizeHigh = (file->size >> 32) & GRUB_UINT_MAX;
+            findData.nFileSizeLow = file->size & GRUB_UINT_MAX;
+            grub_file_close (file);
+        }
+    }
+    grub_uint64_t mtime = info->mtimeset
+        ? (info->mtime * 10000000ULL +
+                    ( 86400ULL * 365 * (1970 - 1601) + 86400ULL * ((1970 - 1601) / 4)
+                      - 86400ULL * ((1970 - 1601) / 100) ) * 10000000ULL)
+        : 0 ;
+    findData.ftCreationTime = findData.ftLastAccessTime =
+        findData.ftLastWriteTime = *(FILETIME *)&mtime;
     ctx->FillFindData (&findData,ctx->DokanFileInfo);
     return 0;
 }
@@ -178,21 +205,18 @@ MirrorFindFiles(
             PFillFindData       FillFindData, // function pointer
             PDOKAN_FILE_INFO    DokanFileInfo)
 {
-    WCHAR filePath[MAX_PATH];
-    HANDLE hFind;
-    WIN32_FIND_DATAW findData;
-    DWORD error;
     int count = 0;
     char *path;
     path = grub_util_tchar_to_utf8(FileName);
     unix_to_windows(path);
 
     struct fuse_readdir_ctx ctx = {
+        .FilePath = path,
         .FillFindData = FillFindData,
         .DokanFileInfo = DokanFileInfo
     };
-    char *pathname;
 
+    char *pathname;
     pathname = xstrdup (path);
 
     /* Remove trailing '/'. */
