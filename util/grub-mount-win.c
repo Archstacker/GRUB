@@ -154,6 +154,106 @@ MirrorOpenDirectory(
     return 0;
 }
 
+/* Context for fuse_getattr.  */
+struct fuse_getattr_ctx
+{
+  char *filename;
+  struct grub_dirhook_info file_info;
+  int file_exists;
+};
+
+/* A hook for iterating directories. */
+static int
+fuse_getattr_find_file (const char *cur_filename,
+			const struct grub_dirhook_info *info, void *data)
+{
+  struct fuse_getattr_ctx *ctx = data;
+
+  if ((info->case_insensitive ? grub_strcasecmp (cur_filename, ctx->filename)
+       : grub_strcmp (cur_filename, ctx->filename)) == 0)
+    {
+      ctx->file_info = *info;
+      ctx->file_exists = 1;
+      return 1;
+    }
+  return 0;
+}
+
+static int DOKAN_CALLBACK
+MirrorGetFileInformation(
+            LPCWSTR	                        FileName,
+            LPBY_HANDLE_FILE_INFORMATION    HandleFileInformation,
+            PDOKAN_FILE_INFO                DokanFileInfo)
+{
+    char *path;
+    char *pathname, *path2;
+    struct fuse_getattr_ctx ctx;
+    path = grub_util_tchar_to_utf8(FileName);
+    unix_to_windows(path);
+    if (path[0] == '/' && path[1] == 0)
+    {
+        HandleFileInformation->dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+        return 0;
+    }
+    ctx.file_exists = 0;
+    pathname = xstrdup (path);
+    /* Remove trailing '/'. */
+    while (*pathname && pathname[grub_strlen (pathname) - 1] == '/')
+      pathname[grub_strlen (pathname) - 1] = 0;
+
+    /* Split into path and filename. */
+    ctx.filename = grub_strrchr (pathname, '/');
+    if (! ctx.filename)
+    {
+        path2 = grub_strdup ("/");
+        ctx.filename = pathname;
+    }
+    else
+    {
+        ctx.filename++;
+        path2 = grub_strdup (pathname);
+        path2[ctx.filename - pathname] = 0;
+    }
+
+    /* It's the whole device. */
+    (fs->dir) (dev, path2, fuse_getattr_find_file, &ctx);
+
+    grub_free (path2);
+    if (!ctx.file_exists)
+    {
+        grub_errno = GRUB_ERR_NONE;
+        return -ENOENT;
+    }
+    HandleFileInformation->dwFileAttributes = ctx.file_info.dir ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_ARCHIVE;
+    if (!ctx.file_info.dir)
+    {
+        grub_file_t file;
+        file = grub_file_open (path);
+        if (! file && grub_errno == GRUB_ERR_BAD_FILE_TYPE)
+        {
+            grub_errno = GRUB_ERR_NONE;
+            HandleFileInformation->dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+        }
+        else if (! file)
+          return translate_error ();
+        else
+        {
+            HandleFileInformation->nFileSizeHigh = (file->size >> 32) & GRUB_UINT_MAX;
+            HandleFileInformation->nFileSizeLow = file->size & GRUB_UINT_MAX;
+            grub_file_close (file);
+        }
+    }
+    HandleFileInformation->dwFileAttributes |= FILE_ATTRIBUTE_READONLY;
+    grub_uint64_t mtime = ctx.file_info.mtimeset
+        ? (ctx.file_info.mtime * 10000000ULL +
+                    ( 86400ULL * 365 * (1970 - 1601) + 86400ULL * ((1970 - 1601) / 4)
+                      - 86400ULL * ((1970 - 1601) / 100) ) * 10000000ULL)
+        : 0 ;
+    HandleFileInformation->ftCreationTime = HandleFileInformation->ftLastAccessTime =
+        HandleFileInformation->ftLastWriteTime = *(FILETIME *)&mtime;
+    return 0;
+}
+
 struct fuse_readdir_ctx
 {
     char* FilePath;
@@ -168,7 +268,7 @@ MirrorFindFilesFill (const char *filename,
     struct fuse_readdir_ctx *ctx = data;
     WIN32_FIND_DATAW findData;
     wcscpy_s(findData.cFileName, MAX_PATH, grub_util_utf8_to_tchar(filename));
-    findData.dwFileAttributes = info->dir ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_READONLY;
+    findData.dwFileAttributes = info->dir ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_ARCHIVE;
     if (!info->dir)
     {
         grub_file_t file;
@@ -188,6 +288,7 @@ MirrorFindFilesFill (const char *filename,
             grub_file_close (file);
         }
     }
+    findData.dwFileAttributes |= FILE_ATTRIBUTE_READONLY;
     grub_uint64_t mtime = info->mtimeset
         ? (info->mtime * 10000000ULL +
                     ( 86400ULL * 365 * (1970 - 1601) + 86400ULL * ((1970 - 1601) / 4)
@@ -310,6 +411,7 @@ fuse_init (void)
 
   dokanOperations->CreateFile = MirrorCreateFile;
   dokanOperations->OpenDirectory = MirrorOpenDirectory;
+  dokanOperations->GetFileInformation = MirrorGetFileInformation;
   dokanOperations->FindFiles = MirrorFindFiles;
 
   status = DokanMain(dokanOptions, dokanOperations);
