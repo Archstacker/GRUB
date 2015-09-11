@@ -38,6 +38,7 @@
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wstrict-prototypes"
 #pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
+#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include "../../dokany/dokan/dokan.h"
 #include "../../dokany/dokan/fileinfo.h"
@@ -143,6 +144,13 @@ MirrorCreateFile(
             DWORD                   FlagsAndAttributes,
             PDOKAN_FILE_INFO        DokanFileInfo)
 {
+    char *path;
+    grub_file_t file;
+    path = grub_util_tchar_to_utf8(FileName);
+    unix_to_windows(path);
+    file = grub_file_open (path);
+    DokanFileInfo->Context = *(ULONG*)&file;
+    grub_errno = GRUB_ERR_NONE;
     return 0;
 }
 
@@ -152,6 +160,59 @@ MirrorOpenDirectory(
             PDOKAN_FILE_INFO        DokanFileInfo)
 {
     return 0;
+}
+
+static int DOKAN_CALLBACK
+MirrorCleanup(
+            LPCWSTR                 FileName,
+            PDOKAN_FILE_INFO        DokanFileInfo)
+{
+    if(DokanFileInfo->Context)
+    {
+        grub_file_close(*(grub_file_t *)&DokanFileInfo->Context);
+        DokanFileInfo->Context = 0;
+    }
+    grub_errno = GRUB_ERR_NONE;
+    return 0;
+}
+
+static int DOKAN_CALLBACK
+MirrorReadFile(
+            LPCWSTR             FileName,
+            LPVOID              Buffer,
+            DWORD               BufferLength,
+            LPDWORD             ReadLength,
+            LONGLONG            Offset,
+            PDOKAN_FILE_INFO    DokanFileInfo)
+{
+    grub_file_t file = *(grub_file_t *)&(DokanFileInfo->Context);
+    grub_ssize_t size;
+
+    if(!file) {
+        char *path;
+        path = grub_util_tchar_to_utf8(FileName);
+        unix_to_windows(path);
+        file = grub_file_open (path);
+        if (! file)
+          return translate_error ();
+        DokanFileInfo->Context = *(ULONG*)&file;
+        grub_errno = GRUB_ERR_NONE;
+    }
+
+    if (Offset > file->size)
+      return -EINVAL;
+
+    file->offset = Offset;
+
+    size = grub_file_read (file, Buffer, BufferLength);
+    if (size < 0)
+      return translate_error ();
+    else
+    {
+        *ReadLength = (DWORD)size;
+        grub_errno = GRUB_ERR_NONE;
+        return 0;
+    }
 }
 
 /* Context for fuse_getattr.  */
@@ -181,7 +242,7 @@ fuse_getattr_find_file (const char *cur_filename,
 
 static int DOKAN_CALLBACK
 MirrorGetFileInformation(
-            LPCWSTR	                        FileName,
+            LPCWSTR                         FileName,
             LPBY_HANDLE_FILE_INFORMATION    HandleFileInformation,
             PDOKAN_FILE_INFO                DokanFileInfo)
 {
@@ -411,6 +472,8 @@ fuse_init (void)
 
   dokanOperations->CreateFile = MirrorCreateFile;
   dokanOperations->OpenDirectory = MirrorOpenDirectory;
+  dokanOperations->Cleanup = MirrorCleanup;
+  dokanOperations->ReadFile = MirrorReadFile;
   dokanOperations->GetFileInformation = MirrorGetFileInformation;
   dokanOperations->FindFiles = MirrorFindFiles;
 
