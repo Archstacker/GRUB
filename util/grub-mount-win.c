@@ -35,13 +35,10 @@
 #include <grub/zfs/zfs.h>
 #include <grub/i18n.h>
 #include <grub/osdep/hostfile_windows.h>
-#pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wstrict-prototypes"
-#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
-#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
-#pragma GCC diagnostic ignored "-Wunused-function"
 #include "../../dokany/dokan/dokan.h"
 #include "../../dokany/dokan/fileinfo.h"
+#pragma GCC diagnostic error "-Wstrict-prototypes"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -51,9 +48,12 @@
 #pragma GCC diagnostic ignored "-Wmissing-prototypes"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <argp.h>
+#pragma GCC diagnostic error "-Wmissing-prototypes"
 #pragma GCC diagnostic error "-Wmissing-declarations"
 
 #include "progname.h"
+
+#define STRCHRSUB(s, old, new) for(char *p = (s); *p; p++) if(*p == (old)) *p = (new);
 
 static const char *root = NULL;
 grub_device_t dev = NULL;
@@ -127,14 +127,6 @@ translate_error (void)
   return ret;
 }
 
-void unix_to_windows(char *str)
-{
-    int i;
-    for(i=0;i<strlen(str);i++)
-      if(str[i]=='\\')
-        str[i]='/';
-}
-
 static int DOKAN_CALLBACK
 MirrorCreateFile(
             LPCWSTR                 FileName,
@@ -147,7 +139,7 @@ MirrorCreateFile(
     char *path;
     grub_file_t file;
     path = grub_util_tchar_to_utf8(FileName);
-    unix_to_windows(path);
+    STRCHRSUB(path, '\\', '/');
     file = grub_file_open (path);
     DokanFileInfo->Context = *(ULONG*)&file;
     grub_errno = GRUB_ERR_NONE;
@@ -191,7 +183,7 @@ MirrorReadFile(
     if(!file) {
         char *path;
         path = grub_util_tchar_to_utf8(FileName);
-        unix_to_windows(path);
+        STRCHRSUB(path, '\\', '/');
         file = grub_file_open (path);
         if (! file)
           return translate_error ();
@@ -250,7 +242,7 @@ MirrorGetFileInformation(
     char *pathname, *path2;
     struct fuse_getattr_ctx ctx;
     path = grub_util_tchar_to_utf8(FileName);
-    unix_to_windows(path);
+    STRCHRSUB(path, '\\', '/');
     if (path[0] == '/' && path[1] == 0)
     {
         HandleFileInformation->dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
@@ -367,10 +359,9 @@ MirrorFindFiles(
             PFillFindData       FillFindData, // function pointer
             PDOKAN_FILE_INFO    DokanFileInfo)
 {
-    int count = 0;
     char *path;
     path = grub_util_tchar_to_utf8(FileName);
-    unix_to_windows(path);
+    STRCHRSUB(path, '\\', '/');
 
     struct fuse_readdir_ctx ctx = {
         .FilePath = path,
@@ -397,7 +388,6 @@ fuse_init (void)
 {
     int i;
     int status;
-    ULONG command;
     PDOKAN_OPERATIONS dokanOperations =
         (PDOKAN_OPERATIONS)malloc(sizeof(DOKAN_OPERATIONS));
     if (dokanOperations == NULL) {
