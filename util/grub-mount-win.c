@@ -142,6 +142,7 @@ MirrorCreateFile(
     STRCHRSUB(path, '\\', '/');
     file = grub_file_open (path);
     DokanFileInfo->Context = *(ULONG*)&file;
+    grub_free(path);
     grub_errno = GRUB_ERR_NONE;
     return 0;
 }
@@ -188,6 +189,7 @@ MirrorReadFile(
         if (! file)
           return translate_error ();
         DokanFileInfo->Context = *(ULONG*)&file;
+        grub_free(path);
         grub_errno = GRUB_ERR_NONE;
     }
 
@@ -304,6 +306,8 @@ MirrorGetFileInformation(
         : 0 ;
     HandleFileInformation->ftCreationTime = HandleFileInformation->ftLastAccessTime =
         HandleFileInformation->ftLastWriteTime = *(FILETIME *)&mtime;
+    grub_free(path);
+    grub_free(pathname);
     return 0;
 }
 
