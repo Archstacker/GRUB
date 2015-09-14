@@ -328,21 +328,29 @@ MirrorFindFilesFill (const char *filename,
     findData.dwFileAttributes = info->dir ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_ARCHIVE;
     if (!info->dir)
     {
-        grub_file_t file;
-        char *tmp;
-        tmp = xasprintf ("%s/%s", ctx->FilePath, filename);
-        file = grub_file_open (tmp);
-        free (tmp);
-        /* Symlink to directory.  */
-        if (! file && grub_errno == GRUB_ERR_BAD_FILE_TYPE)
+        if(!info->symlink)
         {
-            findData.dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+            findData.nFileSizeHigh = (info->size >> 32) & GRUB_UINT_MAX;
+            findData.nFileSizeLow = info->size & GRUB_UINT_MAX;
         }
-        else if (file)
+        else
         {
-            findData.nFileSizeHigh = (file->size >> 32) & GRUB_UINT_MAX;
-            findData.nFileSizeLow = file->size & GRUB_UINT_MAX;
-            grub_file_close (file);
+            grub_file_t file;
+            char *tmp;
+            tmp = xasprintf ("%s/%s", ctx->FilePath, filename);
+            file = grub_file_open (tmp);
+            free (tmp);
+            /* Symlink to directory.  */
+            if (! file && grub_errno == GRUB_ERR_BAD_FILE_TYPE)
+            {
+                findData.dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+            }
+            else if (file)
+            {
+                findData.nFileSizeHigh = (file->size >> 32) & GRUB_UINT_MAX;
+                findData.nFileSizeLow = file->size & GRUB_UINT_MAX;
+                grub_file_close (file);
+            }
         }
     }
     findData.dwFileAttributes |= FILE_ATTRIBUTE_READONLY;
