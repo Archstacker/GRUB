@@ -65,6 +65,14 @@ static int fuse_argc = 0;
 static int num_disks = 0;
 static int mount_crypt = 0;
 
+/* Context for fuse_getattr.  */
+struct fuse_getattr_ctx
+{
+  char *filename;
+  struct grub_dirhook_info file_info;
+  int file_exists;
+};
+
 static grub_err_t
 execute_command (const char *name, int n, char **args)
 {
@@ -127,6 +135,23 @@ translate_error (void)
   return ret;
 }
 
+/* A hook for iterating directories. */
+static int
+fuse_getattr_find_file (const char *cur_filename,
+			const struct grub_dirhook_info *info, void *data)
+{
+  struct fuse_getattr_ctx *ctx = data;
+
+  if ((info->case_insensitive ? grub_strcasecmp (cur_filename, ctx->filename)
+       : grub_strcmp (cur_filename, ctx->filename)) == 0)
+    {
+      ctx->file_info = *info;
+      ctx->file_exists = 1;
+      return 1;
+    }
+  return 0;
+}
+
 static int DOKAN_CALLBACK
 MirrorCreateFile(
             LPCWSTR                 FileName,
@@ -137,12 +162,49 @@ MirrorCreateFile(
             PDOKAN_FILE_INFO        DokanFileInfo)
 {
     char *path;
-    grub_file_t file;
+    char *pathname, *path2;
+    struct fuse_getattr_ctx ctx;
     path = grub_util_tchar_to_utf8(FileName);
     STRCHRSUB(path, '\\', '/');
-    file = grub_file_open (path);
-    DokanFileInfo->Context = *(ULONG*)&file;
+    if (path[0] == '/' && path[1] == 0)
+      return 0;
+    ctx.file_exists = 0;
+    pathname = xstrdup (path);
+    /* Remove trailing '/'. */
+    while (*pathname && pathname[grub_strlen (pathname) - 1] == '/')
+      pathname[grub_strlen (pathname) - 1] = 0;
+
+    /* Split into path and filename. */
+    ctx.filename = grub_strrchr (pathname, '/');
+    if (! ctx.filename)
+    {
+        path2 = grub_strdup ("/");
+        ctx.filename = pathname;
+    }
+    else
+    {
+        ctx.filename++;
+        path2 = grub_strdup (pathname);
+        path2[ctx.filename - pathname] = 0;
+    }
+
+    /* It's the whole device. */
+    (fs->dir) (dev, path2, fuse_getattr_find_file, &ctx);
+
+    grub_free (path2);
+    if (!ctx.file_exists)
+    {
+        grub_errno = GRUB_ERR_NONE;
+        return -ENOENT;
+    }
+    if (!ctx.file_info.dir)
+    {
+        grub_file_t file;
+        file = grub_file_open (path);
+        DokanFileInfo->Context = *(ULONG*)&file;
+    }
     grub_free(path);
+    grub_free(pathname);
     grub_errno = GRUB_ERR_NONE;
     return 0;
 }
@@ -207,31 +269,6 @@ MirrorReadFile(
         grub_errno = GRUB_ERR_NONE;
         return 0;
     }
-}
-
-/* Context for fuse_getattr.  */
-struct fuse_getattr_ctx
-{
-  char *filename;
-  struct grub_dirhook_info file_info;
-  int file_exists;
-};
-
-/* A hook for iterating directories. */
-static int
-fuse_getattr_find_file (const char *cur_filename,
-			const struct grub_dirhook_info *info, void *data)
-{
-  struct fuse_getattr_ctx *ctx = data;
-
-  if ((info->case_insensitive ? grub_strcasecmp (cur_filename, ctx->filename)
-       : grub_strcmp (cur_filename, ctx->filename)) == 0)
-    {
-      ctx->file_info = *info;
-      ctx->file_exists = 1;
-      return 1;
-    }
-  return 0;
 }
 
 static int DOKAN_CALLBACK
