@@ -1047,6 +1047,7 @@ grub_udf_dir_iter (const char *filename, enum grub_fshelp_filetype filetype,
 
   grub_memset (&info, 0, sizeof (info));
   info.dir = ((filetype & GRUB_FSHELP_TYPE_MASK) == GRUB_FSHELP_DIR);
+  info.symlink = ((filetype & GRUB_FSHELP_TYPE_MASK) == GRUB_FSHELP_SYMLINK);
   if (U16 (node->block.fe.tag.tag_ident) == GRUB_UDF_TAG_IDENT_FE)
     tstamp = &node->block.fe.modification_time;
   else if (U16 (node->block.fe.tag.tag_ident) == GRUB_UDF_TAG_IDENT_EFE)
@@ -1073,6 +1074,8 @@ grub_udf_dir_iter (const char *filename, enum grub_fshelp_filetype filetype,
       info.mtimeset = !!grub_datetime2unixtime (&datetime, &info.mtime);
 
       info.mtime -= 60 * tz;
+
+      info.size = U64 (node->block.fe.file_size);
     }
   grub_free (node);
   return ctx->hook (filename, &info, ctx->hook_data);

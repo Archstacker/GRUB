@@ -23,6 +23,7 @@
 #include <grub/device.h>
 #include <grub/symbol.h>
 #include <grub/types.h>
+#include <grub/fshelp.h>
 
 #include <grub/list.h>
 /* For embedding types.  */
@@ -36,9 +37,11 @@ struct grub_file;
 struct grub_dirhook_info
 {
   unsigned dir:1;
+  unsigned symlink:1;
   unsigned mtimeset:1;
   unsigned case_insensitive:1;
   unsigned inodeset:1;
+  grub_off_t size;
   grub_int32_t mtime;
   grub_uint64_t inode;
 };

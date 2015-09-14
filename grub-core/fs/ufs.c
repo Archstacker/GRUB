@@ -711,12 +711,16 @@ grub_ufs_dir (grub_device_t device, const char *path,
 
       info.dir = ((grub_ufs_to_cpu16 (inode.mode) & GRUB_UFS_ATTR_TYPE)
 		  == GRUB_UFS_ATTR_DIR);
+      info.symlink = ((grub_ufs_to_cpu16 (inode.mode) & GRUB_UFS_ATTR_TYPE)
+		  == GRUB_UFS_ATTR_LNK);
 #ifdef MODE_UFS2
       info.mtime = grub_ufs_to_cpu64 (inode.mtime);
 #else
       info.mtime = grub_ufs_to_cpu32 (inode.mtime);
 #endif
       info.mtimeset = 1;
+
+      info.size = INODE_SIZE (data);
 
       if (hook (filename, &info, hook_data))
 	{
