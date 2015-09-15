@@ -200,8 +200,15 @@ MirrorCreateFile(
     if (!ctx.file_info.dir)
     {
         grub_file_t file;
-        file = grub_file_open (path);
-        DokanFileInfo->Context = *(ULONG*)&file;
+        file = (grub_file_t) grub_zalloc (sizeof (*file));
+        if (! file)
+          return -1;
+        file->device = grub_device_open (0);
+        file->fs = fs;
+        if ((fs->open) (file, path) != GRUB_ERR_NONE)
+          grub_free(file);
+        else
+          DokanFileInfo->Context = *(ULONG*)&file;
     }
     grub_free(path);
     grub_free(pathname);
@@ -247,10 +254,18 @@ MirrorReadFile(
         char *path;
         path = grub_util_tchar_to_utf8(FileName);
         STRCHRSUB(path, '\\', '/');
-        file = grub_file_open (path);
+        file = (grub_file_t) grub_zalloc (sizeof (*file));
         if (! file)
-          return translate_error ();
-        DokanFileInfo->Context = *(ULONG*)&file;
+          return -1;
+        file->device = grub_device_open (0);
+        file->fs = fs;
+        if ((fs->open) (file, path) != GRUB_ERR_NONE)
+        {
+            grub_free(file);
+            return translate_error ();
+        }
+        else
+          DokanFileInfo->Context = *(ULONG*)&file;
         grub_free(path);
         grub_errno = GRUB_ERR_NONE;
     }
@@ -320,14 +335,22 @@ MirrorGetFileInformation(
     if (!ctx.file_info.dir)
     {
         grub_file_t file;
-        file = grub_file_open (path);
-        if (! file && grub_errno == GRUB_ERR_BAD_FILE_TYPE)
+        file = (grub_file_t) grub_zalloc (sizeof (*file));
+        if (! file)
+          return -1;
+        file->device = grub_device_open (0);
+        file->fs = fs;
+        if ((fs->open) (file, path) != GRUB_ERR_NONE)
         {
-            grub_errno = GRUB_ERR_NONE;
-            HandleFileInformation->dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+            grub_file_close (file);
+            if (grub_errno == GRUB_ERR_BAD_FILE_TYPE)
+            {
+                grub_errno = GRUB_ERR_NONE;
+                HandleFileInformation->dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+            }
+            else
+              return translate_error ();
         }
-        else if (! file)
-          return translate_error ();
         else
         {
             HandleFileInformation->nFileSizeHigh = (file->size >> 32) & GRUB_UINT_MAX;
@@ -365,7 +388,7 @@ MirrorFindFilesFill (const char *filename,
     findData.dwFileAttributes = info->dir ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_ARCHIVE;
     if (!info->dir)
     {
-        if(!info->symlink)
+        if(!info->symlink && info->size)
         {
             findData.nFileSizeHigh = (info->size >> 32) & GRUB_UINT_MAX;
             findData.nFileSizeLow = info->size & GRUB_UINT_MAX;
@@ -375,7 +398,16 @@ MirrorFindFilesFill (const char *filename,
             grub_file_t file;
             char *tmp;
             tmp = xasprintf ("%s/%s", ctx->FilePath, filename);
-            file = grub_file_open (tmp);
+            file = (grub_file_t) grub_zalloc (sizeof (*file));
+            if (! file)
+              return -1;
+            file->device = grub_device_open (0);
+            file->fs = fs;
+            if ((fs->open) (file, tmp) != GRUB_ERR_NONE)
+            {
+                grub_free(file);
+                file = 0;
+            }
             free (tmp);
             /* Symlink to directory.  */
             if (! file && grub_errno == GRUB_ERR_BAD_FILE_TYPE)
