@@ -124,10 +124,12 @@ grub_disk_cache_store (unsigned long dev_id, unsigned long disk_id,
   cache_index = grub_disk_cache_get_index (dev_id, disk_id, sector);
   cache = grub_disk_cache_table + cache_index;
 
+  if(cache->lock)
+    return GRUB_ERR_NONE;
+
   cache->lock = 1;
   grub_free (cache->data);
   cache->data = 0;
-  cache->lock = 0;
 
   cache->data = grub_malloc (GRUB_DISK_SECTOR_SIZE << GRUB_DISK_CACHE_BITS);
   if (! cache->data)
@@ -138,6 +140,7 @@ grub_disk_cache_store (unsigned long dev_id, unsigned long disk_id,
   cache->dev_id = dev_id;
   cache->disk_id = disk_id;
   cache->sector = sector;
+  cache->lock = 0;
 
   return GRUB_ERR_NONE;
 }
