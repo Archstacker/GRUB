@@ -384,6 +384,7 @@ MirrorFindFilesFill (const char *filename,
 {
     struct fuse_readdir_ctx *ctx = data;
     WIN32_FIND_DATAW findData;
+    ZeroMemory(&findData, sizeof(WIN32_FIND_DATAW));
     wcscpy_s(findData.cFileName, MAX_PATH, grub_util_utf8_to_tchar(filename));
     findData.dwFileAttributes = info->dir ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_ARCHIVE;
     if (!info->dir)
