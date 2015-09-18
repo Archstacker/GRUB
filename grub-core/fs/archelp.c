@@ -186,6 +186,8 @@ grub_archelp_dir (struct grub_archelp_data *data,
 	      grub_memset (&info, 0, sizeof (info));
 	      info.dir = (p != NULL) || ((mode & GRUB_ARCHELP_ATTR_TYPE)
 					 == GRUB_ARCHELP_ATTR_DIR);
+	      info.symlink = (p != NULL) || ((mode & GRUB_ARCHELP_ATTR_TYPE)
+					 == GRUB_ARCHELP_ATTR_LNK);
 	      if (!(mode & GRUB_ARCHELP_ATTR_NOTIME))
 		{
 		  info.mtime = mtime;

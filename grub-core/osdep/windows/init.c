@@ -39,6 +39,7 @@ struct grub_windows_console_font_infoex {
   WCHAR FaceName[LF_FACESIZE];
 };
 
+#if !defined (__MINGW32__) && !defined (__MINGW64__)
 static int
 check_is_raster (HMODULE kernel32, HANDLE hnd)
 {
@@ -111,6 +112,7 @@ set_console_unicode_font (void)
 	func_SetConsoleFont (err_handle, 12);
     }
 }
+#endif
 
 static char *grub_util_base_directory;
 static char *locale_dir;
@@ -148,10 +150,12 @@ grub_util_host_init (int *argc __attribute__ ((unused)),
 {
   char *ptr;
 
+#if !defined (__MINGW32__) && !defined (__MINGW64__)
   SetConsoleOutputCP (CP_UTF8);
   SetConsoleCP (CP_UTF8);
 
   set_console_unicode_font ();
+#endif
 
 #if SIZEOF_TCHAR == 1
 
