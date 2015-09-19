@@ -482,7 +482,7 @@ fuse_init (void)
         return -1;
     }
     dokanOptions->Version = DOKAN_VERSION;
-    dokanOptions->ThreadCount = 0; // use default
+    dokanOptions->ThreadCount = 1;
 
     dokanOptions->MountPoint = grub_util_utf8_to_tchar(images[num_disks - 1]);
     num_disks--;
